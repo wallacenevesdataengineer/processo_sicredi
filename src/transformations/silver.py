@@ -86,7 +86,7 @@ def processa_transacoes(spark):
         F.expr("try_cast(data_transacao as date)").alias("data_transacao"),
         F.col("valor").cast("decimal(18,2)").alias("valor"),
         F.col("nome_estabelecimento").cast("string").alias("nome_estabelecimento"),
-        F.col("mcc").cast("string").alias("mcc"),
+        F.col("mcc").cast("int").alias("mcc"),
         F.col("cidade_estabelecimento").cast("string").alias("cidade_estabelecimento"),
     )
     cartoes_silver = spark.table(f"{SILVER}.cartoes").select(F.col("id_cartao"), F.lit(True).alias("_ri"))
