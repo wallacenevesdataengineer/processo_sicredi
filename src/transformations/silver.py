@@ -30,7 +30,7 @@ def processa_clientes(spark):
         F.expr("try_cast(data_atualizacao as date)").alias("data_atualizacao"),
     )
     window = Window.partitionBy("id_cliente").orderBy(F.col("data_atualizacao").desc())
-    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
+    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num").withColumn("timestamp_processamento", F.current_timestamp())
     clientes_unicos.write.mode("overwrite").saveAsTable(f"{SILVER}.clientes")
     return clientes_unicos
 
