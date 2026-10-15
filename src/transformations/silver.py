@@ -4,15 +4,15 @@ CATALOG = "workspace"
 BRONZE = f"{CATALOG}.bronze"
 SILVER = f"{CATALOG}.silver"
 
-# Função para salvar quarentena
+# Função para salvar registros inválidos/quarentena
 
 def salvar_quarentena(df_avaliado, colunas, tabela):
-    q = df_avaliado.filter(F.col("motivo_erro") != "").select(
+    quarentena = df_avaliado.filter(F.col("motivo_erro") != "").select(
         *[F.col(c).cast("string").alias(c) for c in colunas],
         F.col("motivo_erro"),
-        F.current_timestamp().alias("timestamp_processamento"),
+        F.current_timestamp().alias("timestamp_processamento")
     )
-    q.write.mode("overwrite").saveAsTable(tabela)
+    quarentena.write.mode("overwrite").saveAsTable(tabela)
 
 # ============================================================
 # 1. CLIENTES — tipagem, validação, quarentena e dedup
