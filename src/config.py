@@ -5,6 +5,11 @@ BRONZE = f"{CATALOG}.bronze"
 SILVER = f"{CATALOG}.silver"
 GOLD = f"{CATALOG}.gold"
 
+BRONZE_SCHEMA = BRONZE
+SILVER_SCHEMA = SILVER
+GOLD_SCHEMA = GOLD
+CLIENTES_RAW_PATH = "/Volumes/workspace/default/transacoes/clientes.csv"
+
 CAMADAS = ["bronze", "silver", "gold"]
 
 DATA_PROCESSAMENTO = None  # para definir dinamicamente
