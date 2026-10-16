@@ -53,11 +53,6 @@ def processa_clientes(spark):
         ) USING DELTA
         PARTITIONED BY (ano_mes)
     """)
-    clientes_unicos.write.format("delta") \
-        .option("overwriteSchema", "true") \
-        .mode("overwrite") \
-        .partitionBy("ano_mes") \
-        .saveAsTable(f"{SILVER}.clientes")
     print(f"clientes_unicos count: {clientes_unicos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
@@ -107,11 +102,6 @@ def processa_contas(spark):
         ) USING DELTA
         PARTITIONED BY (ano_mes)
     """)
-    contas_validas.write.format("delta") \
-        .option("overwriteSchema", "true") \
-        .mode("overwrite") \
-        .partitionBy("ano_mes") \
-        .saveAsTable(f"{SILVER}.contas")
     print(f"contas_validas count: {contas_validas.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
@@ -164,11 +154,6 @@ def processa_cartoes(spark):
         ) USING DELTA
         PARTITIONED BY (ano_mes)
     """)
-    cartoes_validos.write.format("delta") \
-        .option("overwriteSchema", "true") \
-        .mode("overwrite") \
-        .partitionBy("ano_mes") \
-        .saveAsTable(f"{SILVER}.cartoes")
     print(f"cartoes_validos count: {cartoes_validos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
@@ -221,11 +206,6 @@ def processa_transacoes(spark):
         ) USING DELTA
         PARTITIONED BY (ano_mes)
     """)
-    transacoes_validas.write.format("delta") \
-        .option("overwriteSchema", "true") \
-        .mode("overwrite") \
-        .partitionBy("ano_mes") \
-        .saveAsTable(f"{SILVER}.transacoes_cartao")
     print(f"transacoes_validas count: {transacoes_validas.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
@@ -270,11 +250,6 @@ def processa_estornos(spark):
         ) USING DELTA
         PARTITIONED BY (ano_mes)
     """)
-    estornos_validos.write.format("delta") \
-        .option("overwriteSchema", "true") \
-        .mode("overwrite") \
-        .partitionBy("ano_mes") \
-        .saveAsTable(f"{SILVER}.estornos")
     print(f"estornos_validos count: {estornos_validos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
@@ -288,3 +263,20 @@ def processa_estornos(spark):
         WHEN NOT MATCHED THEN INSERT *
     """)
     return estornos_validos
+
+# ============================================================
+# 6. PIPELINE SILVER — orquestração
+# ============================================================
+def run_pipeline_silver(spark):
+    """Executa o pipeline completo da camada Silver em ordem de dependência."""
+    processa_clientes(spark)
+    processa_contas(spark)
+    processa_cartoes(spark)
+    processa_transacoes(spark)
+    processa_estornos(spark)
+    print("Camada Silver concluída.")
+
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
+    spark = SparkSession.builder.getOrCreate()
+    run_pipeline_silver(spark)
