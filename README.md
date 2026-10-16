@@ -1,4 +1,4 @@
-O processo desenvolvido para case do Sicredi com objetivo de analise de processos de clientes e transações de processos.
+O processo desenvolvido para case do Sicredi com objetivo de analise de processos de clientes,transações, contas e estornos.
 A arquitetura Medallion com camadas bronze, silver e gold.
 A primeira etapa são armazenar os arquivos CSV. Foi incluído dentro do volumes em schema default dentro do databricks.
 Na camada bronze extraindo desses arquivos e criando as tabelas bronze.
