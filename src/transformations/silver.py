@@ -38,12 +38,27 @@ def processa_clientes(spark):
         "ano_mes": F.date_format(F.col("data_atualizacao"), "yyyy-MM"),
         "timestamp_processamento": F.current_timestamp()
     })
-    # Sempre cria/força o particionamento na primeira execução
+    # Garante criação da tabela Silver particionada via SQL
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.clientes (
+            id_cliente LONG,
+            nome STRING,
+            cpf STRING,
+            data_nascimento DATE,
+            cidade STRING,
+            estado STRING,
+            data_atualizacao DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        ) USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     clientes_unicos.write.format("delta") \
         .option("overwriteSchema", "true") \
         .mode("overwrite") \
         .partitionBy("ano_mes") \
         .saveAsTable(f"{SILVER}.clientes")
+    print(f"clientes_unicos count: {clientes_unicos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
     temp_view = f"vw_clientes_staging_{str(uuid.uuid4())[:8]}"
@@ -79,12 +94,25 @@ def processa_contas(spark):
         "ano_mes": F.date_format(F.col("data_abertura"), "yyyy-MM"),
         "timestamp_processamento": F.current_timestamp()
     })
-    # Sempre cria/força o particionamento na primeira execução
+    # Garante criação da tabela Silver particionada via SQL
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.contas (
+            id_conta LONG,
+            id_cliente LONG,
+            tipo_conta STRING,
+            status_conta STRING,
+            data_abertura DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        ) USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     contas_validas.write.format("delta") \
         .option("overwriteSchema", "true") \
         .mode("overwrite") \
         .partitionBy("ano_mes") \
         .saveAsTable(f"{SILVER}.contas")
+    print(f"contas_validas count: {contas_validas.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
     temp_view = f"vw_contas_staging_{str(uuid.uuid4())[:8]}"
@@ -121,12 +149,27 @@ def processa_cartoes(spark):
         "ano_mes": F.date_format(F.col("data_atualizacao"), "yyyy-MM"),
         "timestamp_processamento": F.current_timestamp()
     })
-    # Sempre cria/força o particionamento na primeira execução
+    # Garante criação da tabela Silver particionada via SQL
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.cartoes (
+            id_cartao LONG,
+            id_conta LONG,
+            bandeira STRING,
+            tipo_cartao STRING,
+            status_cartao STRING,
+            data_emissao DATE,
+            data_atualizacao DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        ) USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     cartoes_validos.write.format("delta") \
         .option("overwriteSchema", "true") \
         .mode("overwrite") \
         .partitionBy("ano_mes") \
         .saveAsTable(f"{SILVER}.cartoes")
+    print(f"cartoes_validos count: {cartoes_validos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
     temp_view = f"vw_cartoes_staging_{str(uuid.uuid4())[:8]}"
@@ -163,12 +206,27 @@ def processa_transacoes(spark):
         "ano_mes": F.date_format(F.col("data_transacao"), "yyyy-MM"),
         "timestamp_processamento": F.current_timestamp()
     })
-    # Sempre cria/força o particionamento na primeira execução
+    # Garante criação da tabela Silver particionada via SQL
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.transacoes_cartao (
+            id_transacao LONG,
+            id_cartao LONG,
+            data_transacao DATE,
+            valor DECIMAL(18,2),
+            nome_estabelecimento STRING,
+            mcc INT,
+            cidade_estabelecimento STRING,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        ) USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     transacoes_validas.write.format("delta") \
         .option("overwriteSchema", "true") \
         .mode("overwrite") \
         .partitionBy("ano_mes") \
         .saveAsTable(f"{SILVER}.transacoes_cartao")
+    print(f"transacoes_validas count: {transacoes_validas.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
     temp_view = f"vw_transacoes_staging_{str(uuid.uuid4())[:8]}"
@@ -200,12 +258,24 @@ def processa_estornos(spark):
         "ano_mes": F.date_format(F.col("data_estorno"), "yyyy-MM"),
         "timestamp_processamento": F.current_timestamp()
     })
-    # Sempre cria/força o particionamento na primeira execução
+    # Garante criação da tabela Silver particionada via SQL
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.estornos (
+            id_estorno LONG,
+            id_transacao LONG,
+            data_estorno DATE,
+            motivo_estorno STRING,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        ) USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     estornos_validos.write.format("delta") \
         .option("overwriteSchema", "true") \
         .mode("overwrite") \
         .partitionBy("ano_mes") \
         .saveAsTable(f"{SILVER}.estornos")
+    print(f"estornos_validos count: {estornos_validos.count()}")
     spark.catalog.clearCache()
     # MERGE incremental
     temp_view = f"vw_estornos_staging_{str(uuid.uuid4())[:8]}"
