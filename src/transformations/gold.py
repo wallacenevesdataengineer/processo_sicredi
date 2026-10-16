@@ -315,6 +315,100 @@ def gold_validacao_star_schema(spark, silver_schema, gold_schema):
     return df_resumo
 
 # ============================================================
+# REGRAS DE NEGÓCIO — Análises Semânticas (SQL Avançado)
+# ============================================================
+
+def gold_semantic_cte_transacoes_cliente(spark, gold_schema):
+    """CTE: análise de transações por cliente com soma de valor por mês."""
+    df = spark.sql(f"""
+    WITH transacoes_cliente AS (
+        SELECT id_cliente, date_format(data_transacao, 'yyyy-MM') AS ano_mes, valor
+        FROM {gold_schema}.transacoes_cartao
+        WHERE valor > 0
+    )
+    SELECT id_cliente, ano_mes, SUM(valor) AS valor_total
+    FROM transacoes_cliente
+    GROUP BY id_cliente, ano_mes
+    ORDER BY valor_total DESC
+    """)
+    print("\n=== CTE: Transações por cliente ===")
+    df.show(20, truncate=False)
+    return df
+
+def gold_semantic_row_number_versionamento(spark, gold_schema):
+    """ROW_NUMBER: transação mais recente de cada cliente por mês."""
+    df = spark.sql(f"""
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY id_cliente, date_format(data_transacao, 'yyyy-MM') ORDER BY data_transacao DESC) AS rn
+    FROM {gold_schema}.transacoes_cartao
+    QUALIFY rn = 1
+    """)
+    print("\n=== ROW_NUMBER: Transação mais recente por cliente/mês ===")
+    df.show(20, truncate=False)
+    return df
+
+def gold_semantic_lag_lead_mensal(spark, gold_schema):
+    """LAG/LEAD: movimentação de valor entre meses consecutivos por cliente."""
+    df = spark.sql(f"""
+    SELECT 
+        id_cliente,
+        mes AS ano_mes,
+        valor_total_mes AS valor_total,
+        LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes) AS valor_mes_anterior,
+        LEAD(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes) AS valor_proximo_mes,
+        (valor_total_mes - LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes)) AS variacao
+    FROM {gold_schema}.resumo_cliente_mes
+    """)
+    print("\n=== LAG/LEAD: Movimentação mensal ===")
+    df.show(20, truncate=False)
+    return df
+
+def gold_semantic_ranking_clientes(spark, gold_schema):
+    """RANK/DENSE_RANK: ranking de clientes por valor movimentado no mês."""
+    df = spark.sql(f"""
+    SELECT 
+        id_cliente, mes AS ano_mes, valor_total_mes AS valor_total,
+        RANK() OVER (ORDER BY valor_total_mes DESC) AS ranking_valor,
+        DENSE_RANK() OVER (ORDER BY valor_total_mes DESC) AS ranking_valor_dense
+    FROM {gold_schema}.resumo_cliente_mes
+    """)
+    print("\n=== RANK/DENSE_RANK: Ranking de clientes ===")
+    df.show(20, truncate=False)
+    return df
+
+def gold_semantic_crescimento_50pct(spark, gold_schema):
+    """Clientes com crescimento superior a 50% entre dois meses consecutivos."""
+    df = spark.sql(f"""
+    SELECT *
+    FROM (
+      SELECT 
+        id_cliente, mes AS ano_mes, valor_total_mes AS valor_total,
+        LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes) AS valor_mes_anterior,
+        CASE
+          WHEN LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes) > 0 THEN
+               (valor_total_mes - LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes)) / LAG(valor_total_mes) OVER (PARTITION BY id_cliente ORDER BY mes)
+          ELSE NULL END AS crescimento_relativo
+      FROM {gold_schema}.resumo_cliente_mes
+    ) t
+    WHERE crescimento_relativo > 0.5
+    """)
+    print("\n=== Clientes com crescimento > 50% ===")
+    df.show(20, truncate=False)
+    return df
+
+def gold_semantic_quartis_ntile(spark, gold_schema):
+    """NTILE: classificação de clientes em quartis por valor movimentado."""
+    df = spark.sql(f"""
+    SELECT 
+        id_cliente, mes AS ano_mes, valor_total_mes AS valor_total,
+        NTILE(4) OVER (ORDER BY valor_total_mes DESC) AS quartil_valor_movimentado
+    FROM {gold_schema}.resumo_cliente_mes
+    """)
+    print("\n=== NTILE: Quartis de valor movimentado ===")
+    df.show(20, truncate=False)
+    return df
+
+# ============================================================
 # Função para rodar pipeline completa
 # ============================================================
 
@@ -333,5 +427,13 @@ def run_pipeline_gold(spark, silver_schema="workspace.silver", gold_schema="work
     gold_dim_tempo(spark, silver_schema, gold_schema)
     gold_fact_transacoes_financeiras(spark, silver_schema, gold_schema)
     gold_validacao_star_schema(spark, silver_schema, gold_schema)
+
+    # Regras de negócio — análises semânticas (SQL avançado)
+    gold_semantic_cte_transacoes_cliente(spark, gold_schema)
+    gold_semantic_row_number_versionamento(spark, gold_schema)
+    gold_semantic_lag_lead_mensal(spark, gold_schema)
+    gold_semantic_ranking_clientes(spark, gold_schema)
+    gold_semantic_crescimento_50pct(spark, gold_schema)
+    gold_semantic_quartis_ntile(spark, gold_schema)
 
     print("Camada Gold concluída.")
