@@ -27,11 +27,23 @@ def processa_clientes(spark):
         F.expr("try_cast(data_nascimento as date)").alias("data_nascimento"),
         F.col("cidade").cast("string").alias("cidade"),
         F.col("estado").cast("string").alias("estado"),
-        F.expr("try_cast(data_atualizacao as date)").alias("data_atualizacao"),
+        F.expr("try_cast(data_atualizacao as date)").alias("data_atualizacao")
     )
+    # Deduplicação: clientes mais recentes
     window = Window.partitionBy("id_cliente").orderBy(F.col("data_atualizacao").desc())
-    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num").withColumn("timestamp_processamento", F.current_timestamp())
-    clientes_unicos.write.mode("overwrite").saveAsTable(f"{SILVER}.clientes")
+    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num")
+    clientes_unicos = clientes_unicos.withColumn("timestamp_processamento", F.current_timestamp())
+    # Salva na mesma tabela Delta, sem sufixo, com overwriteSchema (mantém evolutivo)
+    # Cria uma view temporária para staging deduplicado
+    clientes_unicos.createOrReplaceTempView("vw_clientes_staging")
+    # Aplica MERGE Delta para cargas incrementais
+    spark.sql(f"""
+        MERGE INTO {SILVER}.clientes tgt
+        USING vw_clientes_staging src
+        ON tgt.id_cliente = src.id_cliente
+        WHEN MATCHED AND src.data_atualizacao > tgt.data_atualizacao THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
     return clientes_unicos
 
 # ============================================================
@@ -45,12 +57,24 @@ def processa_contas(spark):
         F.col("id_cliente").cast("long").alias("id_cliente"),
         F.col("tipo_conta").cast("string").alias("tipo_conta"),
         F.col("status_conta").cast("string").alias("status_conta"),
-        F.expr("try_cast(data_abertura as date)").alias("data_abertura"),
+        F.expr("try_cast(data_abertura as date)").alias("data_abertura")
     )
     clientes_silver = spark.table(f"{SILVER}.clientes").select(F.col("id_cliente"), F.lit(True).alias("_ri"))
     contas_ri = contas_tipado.join(clientes_silver, "id_cliente", "left")
-    contas_validas = contas_ri.filter(F.col("_ri") == True).drop("_ri")
-    contas_validas.write.mode("overwrite").saveAsTable(f"{SILVER}.contas")
+    window = Window.partitionBy("id_conta").orderBy(F.col("data_abertura").desc())
+    contas_unicas = contas_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num")
+    contas_validas = contas_unicas.filter(F.col("_ri") == True).drop("_ri")
+    contas_validas = contas_validas.withColumn("timestamp_processamento", F.current_timestamp())
+    # Cria view staging deduplicada
+    contas_validas.createOrReplaceTempView("vw_contas_staging")
+    # MERGE incremental na tabela Silver Delta
+    spark.sql(f"""
+        MERGE INTO {SILVER}.contas tgt
+        USING vw_contas_staging src
+        ON tgt.id_conta = src.id_conta
+        WHEN MATCHED AND src.data_abertura > tgt.data_abertura THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
     return contas_validas
 
 # ============================================================
@@ -72,7 +96,15 @@ def processa_cartoes(spark):
     window = Window.partitionBy("id_cartao").orderBy(F.col("data_atualizacao").desc())
     cartoes_unicos = cartoes_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
     cartoes_validos = cartoes_unicos.filter(F.col("_ri") == True).drop("_ri", "row_num")
-    cartoes_validos.write.mode("overwrite").saveAsTable(f"{SILVER}.cartoes")
+    cartoes_validos = cartoes_validos.withColumn("timestamp_processamento", F.current_timestamp())
+    cartoes_validos.createOrReplaceTempView("vw_cartoes_staging")
+    spark.sql(f"""
+        MERGE INTO {SILVER}.cartoes tgt
+        USING vw_cartoes_staging src
+        ON tgt.id_cartao = src.id_cartao
+        WHEN MATCHED AND src.data_atualizacao > tgt.data_atualizacao THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
     return cartoes_validos
 
 # ============================================================
@@ -94,7 +126,14 @@ def processa_transacoes(spark):
     window = Window.partitionBy("id_transacao").orderBy(F.col("data_transacao").desc(), F.col("valor").desc())
     transacoes_unicas = transacoes_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
     transacoes_validas = transacoes_unicas.filter(F.col("_ri") == True).drop("_ri", "row_num")
-    transacoes_validas.write.mode("overwrite").saveAsTable(f"{SILVER}.transacoes_cartao")
+    transacoes_validas.createOrReplaceTempView("vw_transacoes_staging")
+    spark.sql(f"""
+        MERGE INTO {SILVER}.transacoes_cartao tgt
+        USING vw_transacoes_staging src
+        ON tgt.id_transacao = src.id_transacao
+        WHEN MATCHED AND src.data_transacao > tgt.data_transacao THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
     return transacoes_validas
 
 # ============================================================
@@ -111,5 +150,12 @@ def processa_estornos(spark):
     transacoes_silver = spark.table(f"{SILVER}.transacoes_cartao").select(F.col("id_transacao"), F.lit(True).alias("_ri"))
     estornos_ri = estornos_tipado.join(transacoes_silver, "id_transacao", "left")
     estornos_validos = estornos_ri.filter(F.col("_ri") == True).drop("_ri")
-    estornos_validos.write.mode("overwrite").saveAsTable(f"{SILVER}.estornos")
+    estornos_validos.createOrReplaceTempView("vw_estornos_staging")
+    spark.sql(f"""
+        MERGE INTO {SILVER}.estornos tgt
+        USING vw_estornos_staging src
+        ON tgt.id_estorno = src.id_estorno
+        WHEN MATCHED AND src.data_estorno > tgt.data_estorno THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
     return estornos_validos
