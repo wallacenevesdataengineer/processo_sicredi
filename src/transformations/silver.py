@@ -1,4 +1,6 @@
 from pyspark.sql import functions as F, Window
+import uuid
+
 
 CATALOG = "workspace"
 BRONZE = f"{CATALOG}.bronze"
