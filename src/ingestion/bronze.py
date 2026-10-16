@@ -20,7 +20,7 @@ def processa_bronze_generic(spark, raw_data_path, bronze_schema, tabela_nome, ar
     opts = options or {}
     df_raw = spark.read.format(opts.get("format", "csv")).options(**opts.get("read_options", {"header": True})).load(raw_data_path)
     df_bronze = adiciona_metadados_tecnicos(df_raw, arquivo_origem, data_referencia)
-    df_bronze.write.mode("append").saveAsTable(f"{bronze_schema}.{tabela_nome}")
+    df_bronze.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{bronze_schema}.{tabela_nome}")
     return df_bronze
 
 # Exemplo de chamada:
