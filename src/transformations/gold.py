@@ -4,17 +4,26 @@ def gold_transacoes_cartao(spark, silver_schema, gold_schema):
     """
     Cria visão analítica unindo cliente, conta, cartão, transação.
     """
-    trans = spark.table(f"{silver_schema}.transacoes_cartao")
-    cart = spark.table(f"{silver_schema}.cartoes")
-    cont = spark.table(f"{silver_schema}.contas")
-    cli = spark.table(f"{silver_schema}.clientes")
+    trans = spark.table(f"{silver_schema}.transacoes_cartao").select(
+        "id_transacao", "id_cartao", "data_transacao", "valor",
+        "nome_estabelecimento", "mcc", "cidade_estabelecimento"
+    )
+    cart = spark.table(f"{silver_schema}.cartoes").select(
+        "id_cartao", "id_conta", "bandeira", "tipo_cartao", "status_cartao"
+    )
+    cont = spark.table(f"{silver_schema}.contas").select(
+        "id_conta", "id_cliente", "tipo_conta", "status_conta"
+    )
+    cli = spark.table(f"{silver_schema}.clientes").select(
+        "id_cliente", "nome", "cpf", "cidade", "estado"
+    )
     joined = (
         trans
         .join(cart, "id_cartao", "left")
         .join(cont, "id_conta", "left")
         .join(cli, "id_cliente", "left")
     )
-    joined.write.mode("overwrite").saveAsTable(f"{gold_schema}.transacoes_cartao")
+    joined.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{gold_schema}.transacoes_cartao")
     return joined
 
 def gold_resumo_cliente_mes(spark, silver_schema, gold_schema):
@@ -31,7 +40,7 @@ def gold_resumo_cliente_mes(spark, silver_schema, gold_schema):
               F.avg("valor").alias("valor_medio_mes")
           )
     )
-    resumo.write.mode("overwrite").saveAsTable(f"{gold_schema}.resumo_cliente_mes")
+    resumo.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{gold_schema}.resumo_cliente_mes")
     return resumo
 
 def gold_ranking_estabelecimento(spark, gold_schema):
@@ -47,7 +56,7 @@ def gold_ranking_estabelecimento(spark, gold_schema):
             )
             .orderBy(F.desc("valor_total"), F.desc("qtd_transacoes"))
     )
-    ranking.write.mode("overwrite").saveAsTable(f"{gold_schema}.ranking_estabelecimento")
+    ranking.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{gold_schema}.ranking_estabelecimento")
     return ranking
 
 def gold_alertas_qualidade(spark, silver_schema, gold_schema):
@@ -64,14 +73,17 @@ def gold_alertas_qualidade(spark, silver_schema, gold_schema):
     from functools import reduce
     dfs = []
     for ent in entidades:
-        df = spark.table(f"{silver_schema}.{ent}")
-        if "motivo_erro" in df.columns:
-            alerta = df.groupBy("motivo_erro").agg(F.count("*").alias("ocorrencias")).withColumn("entidade", F.lit(ent))
-            dfs.append(alerta)
+        try:
+            df = spark.table(f"{silver_schema}.{ent}")
+            if "motivo_erro" in df.columns:
+                alerta = df.groupBy("motivo_erro").agg(F.count("*").alias("ocorrencias")).withColumn("entidade", F.lit(ent))
+                dfs.append(alerta)
+        except Exception:
+            continue
     if not dfs:
         return None
     unioned = reduce(lambda a,b: a.unionByName(b), dfs)
-    unioned.write.mode("overwrite").saveAsTable(f"{gold_schema}.alertas_qualidade")
+    unioned.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{gold_schema}.alertas_qualidade")
     return unioned
 
 # Funções para rodar pipeline completa
