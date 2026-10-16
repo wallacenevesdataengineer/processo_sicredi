@@ -4,15 +4,15 @@ CATALOG = "workspace"
 BRONZE = f"{CATALOG}.bronze"
 SILVER = f"{CATALOG}.silver"
 
-# Função para salvar quarentena
+# Função para salvar registros inválidos/quarentena
 
 def salvar_quarentena(df_avaliado, colunas, tabela):
-    q = df_avaliado.filter(F.col("motivo_erro") != "").select(
+    quarentena = df_avaliado.filter(F.col("motivo_erro") != "").select(
         *[F.col(c).cast("string").alias(c) for c in colunas],
         F.col("motivo_erro"),
-        F.current_timestamp().alias("timestamp_processamento"),
+        F.current_timestamp().alias("timestamp_processamento")
     )
-    q.write.mode("overwrite").saveAsTable(tabela)
+    quarentena.write.mode("overwrite").saveAsTable(tabela)
 
 # ============================================================
 # 1. CLIENTES — tipagem, validação, quarentena e dedup
@@ -30,7 +30,7 @@ def processa_clientes(spark):
         F.expr("try_cast(data_atualizacao as date)").alias("data_atualizacao"),
     )
     window = Window.partitionBy("id_cliente").orderBy(F.col("data_atualizacao").desc())
-    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
+    clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num").withColumn("timestamp_processamento", F.current_timestamp())
     clientes_unicos.write.mode("overwrite").saveAsTable(f"{SILVER}.clientes")
     return clientes_unicos
 
@@ -86,7 +86,7 @@ def processa_transacoes(spark):
         F.expr("try_cast(data_transacao as date)").alias("data_transacao"),
         F.col("valor").cast("decimal(18,2)").alias("valor"),
         F.col("nome_estabelecimento").cast("string").alias("nome_estabelecimento"),
-        F.col("mcc").cast("string").alias("mcc"),
+        F.col("mcc").cast("int").alias("mcc"),
         F.col("cidade_estabelecimento").cast("string").alias("cidade_estabelecimento"),
     )
     cartoes_silver = spark.table(f"{SILVER}.cartoes").select(F.col("id_cartao"), F.lit(True).alias("_ri"))
