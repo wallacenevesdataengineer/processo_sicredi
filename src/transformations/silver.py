@@ -22,6 +22,29 @@ def salvar_quarentena(df_avaliado, colunas, tabela):
 
 def processa_clientes(spark):
     COLUNAS_CLIENTES = ["id_cliente", "nome", "cpf", "data_nascimento", "cidade", "estado", "data_atualizacao"]
+    bronze = spark.table(f"{BRONZE}.clientes")
+
+    # Validação: regras de quarentena
+    clientes_avaliados = bronze.withColumn(
+        "motivo_erro",
+        F.when(F.col("id_cliente").isNull(), "id_cliente nulo")
+        .when(F.col("cpf").isNull(), "cpf nulo")
+        .when(~F.col("cpf").rlike("^[0-9]{11}$"), "cpf inválido")
+        .otherwise("")
+    )
+    # Salva quarentena
+    salvar_quarentena(clientes_avaliados, COLUNAS_CLIENTES, f"{SILVER}.quarentena_clientes")
+    # Só registros válidos
+    clientes_tipado = clientes_avaliados.filter(F.col("motivo_erro") == "").select(
+        F.col("id_cliente").cast("long").alias("id_cliente"),
+        F.col("nome").cast("string").alias("nome"),
+        F.col("cpf").cast("string").alias("cpf"),
+        F.expr("try_cast(data_nascimento as date)").alias("data_nascimento"),
+        F.col("cidade").cast("string").alias("cidade"),
+        F.col("estado").cast("string").alias("estado"),
+        F.expr("try_cast(data_atualizacao as date)").alias("data_atualizacao")
+    )
+    COLUNAS_CLIENTES = ["id_cliente", "nome", "cpf", "data_nascimento", "cidade", "estado", "data_atualizacao"]
     clientes_tipado = spark.table(f"{BRONZE}.clientes").select(
         F.col("id_cliente").cast("long").alias("id_cliente"),
         F.col("nome").cast("string").alias("nome"),
@@ -73,7 +96,16 @@ def processa_clientes(spark):
 
 def processa_contas(spark):
     COLUNAS_CONTAS = ["id_conta", "id_cliente", "tipo_conta", "status_conta", "data_abertura"]
-    contas_tipado = spark.table(f"{BRONZE}.contas").select(
+    bronze = spark.table(f"{BRONZE}.contas")
+
+    contas_avaliadas = bronze.withColumn(
+        "motivo_erro",
+        F.when(F.col("id_conta").isNull(), "id_conta nulo")
+        .when(F.col("id_cliente").isNull(), "id_cliente nulo")
+        .otherwise("")
+    )
+    salvar_quarentena(contas_avaliadas, COLUNAS_CONTAS, f"{SILVER}.quarentena_contas")
+    contas_tipado = contas_avaliadas.filter(F.col("motivo_erro") == "").select(
         F.col("id_conta").cast("long").alias("id_conta"),
         F.col("id_cliente").cast("long").alias("id_cliente"),
         F.col("tipo_conta").cast("string").alias("tipo_conta"),
@@ -121,7 +153,16 @@ def processa_contas(spark):
 # ============================================================
 def processa_cartoes(spark):
     COLUNAS_CARTOES = ["id_cartao", "id_conta", "bandeira", "tipo_cartao", "status_cartao", "data_emissao", "data_atualizacao"]
-    cartoes_tipado = spark.table(f"{BRONZE}.cartoes").select(
+    bronze = spark.table(f"{BRONZE}.cartoes")
+
+    cartoes_avaliados = bronze.withColumn(
+        "motivo_erro",
+        F.when(F.col("id_cartao").isNull(), "id_cartao nulo")
+        .when(F.col("id_conta").isNull(), "id_conta nulo")
+        .otherwise("")
+    )
+    salvar_quarentena(cartoes_avaliados, COLUNAS_CARTOES, f"{SILVER}.quarentena_cartoes")
+    cartoes_tipado = cartoes_avaliados.filter(F.col("motivo_erro") == "").select(
         F.col("id_cartao").cast("long").alias("id_cartao"),
         F.col("id_conta").cast("long").alias("id_conta"),
         F.col("bandeira").cast("string").alias("bandeira"),
@@ -173,7 +214,16 @@ def processa_cartoes(spark):
 # ============================================================
 def processa_transacoes(spark):
     COLUNAS_TRANSACOES = ["id_transacao", "id_cartao", "data_transacao", "valor", "nome_estabelecimento", "mcc", "cidade_estabelecimento"]
-    transacoes_tipado = spark.table(f"{BRONZE}.transacoes_cartao").select(
+    bronze = spark.table(f"{BRONZE}.transacoes_cartao")
+
+    transacoes_avaliadas = bronze.withColumn(
+        "motivo_erro",
+        F.when(F.col("id_transacao").isNull(), "id_transacao nulo")
+        .when(F.col("id_cartao").isNull(), "id_cartao nulo")
+        .otherwise("")
+    )
+    salvar_quarentena(transacoes_avaliadas, COLUNAS_TRANSACOES, f"{SILVER}.quarentena_transacoes_cartao")
+    transacoes_tipado = transacoes_avaliadas.filter(F.col("motivo_erro") == "").select(
         F.col("id_transacao").cast("long").alias("id_transacao"),
         F.col("id_cartao").cast("long").alias("id_cartao"),
         F.expr("try_cast(data_transacao as date)").alias("data_transacao"),
@@ -225,7 +275,16 @@ def processa_transacoes(spark):
 # ============================================================
 def processa_estornos(spark):
     COLUNAS_ESTORNOS = ["id_estorno", "id_transacao", "data_estorno", "motivo_estorno"]
-    estornos_tipado = spark.table(f"{BRONZE}.estornos").select(
+    bronze = spark.table(f"{BRONZE}.estornos")
+
+    estornos_avaliados = bronze.withColumn(
+        "motivo_erro",
+        F.when(F.col("id_estorno").isNull(), "id_estorno nulo")
+        .when(F.col("id_transacao").isNull(), "id_transacao nulo")
+        .otherwise("")
+    )
+    salvar_quarentena(estornos_avaliados, COLUNAS_ESTORNOS, f"{SILVER}.quarentena_estornos")
+    estornos_tipado = estornos_avaliados.filter(F.col("motivo_erro") == "").select(
         F.col("id_estorno").cast("long").alias("id_estorno"),
         F.col("id_transacao").cast("long").alias("id_transacao"),
         F.expr("try_cast(data_estorno as date)").alias("data_estorno"),
