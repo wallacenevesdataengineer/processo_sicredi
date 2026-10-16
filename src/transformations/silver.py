@@ -32,11 +32,26 @@ def processa_clientes(spark):
     # Deduplicação: clientes mais recentes
     window = Window.partitionBy("id_cliente").orderBy(F.col("data_atualizacao").desc())
     clientes_unicos = clientes_tipado.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num")
-    clientes_unicos = clientes_unicos.withColumn("timestamp_processamento", F.current_timestamp())
-    # Salva na mesma tabela Delta, sem sufixo, com overwriteSchema (mantém evolutivo)
-    # Cria uma view temporária para staging deduplicado
-    clientes_unicos.createOrReplaceTempView("vw_clientes_staging")
-    # Aplica MERGE Delta para cargas incrementais
+    clientes_unicos = clientes_unicos.withColumns({
+        "ano_mes": F.date_format(F.col("data_atualizacao"), "yyyy-MM"),
+        "timestamp_processamento": F.current_timestamp()
+    })
+    clientes_unicos.createOrReplaceTempView(f"vw_clientes_staging_{str(uuid.uuid4())[:8]}")
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.clientes (
+            id_cliente LONG,
+            nome STRING,
+            cpf STRING,
+            data_nascimento DATE,
+            cidade STRING,
+            estado STRING,
+            data_atualizacao DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        )
+        USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     spark.sql(f"""
         MERGE INTO {SILVER}.clientes tgt
         USING vw_clientes_staging src
@@ -64,10 +79,24 @@ def processa_contas(spark):
     window = Window.partitionBy("id_conta").orderBy(F.col("data_abertura").desc())
     contas_unicas = contas_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num")
     contas_validas = contas_unicas.filter(F.col("_ri") == True).drop("_ri")
-    contas_validas = contas_validas.withColumn("timestamp_processamento", F.current_timestamp())
-    # Cria view staging deduplicada
-    contas_validas.createOrReplaceTempView("vw_contas_staging")
-    # MERGE incremental na tabela Silver Delta
+    contas_validas = contas_validas.withColumns({
+        "ano_mes": F.date_format(F.col("data_abertura"), "yyyy-MM"),
+        "timestamp_processamento": F.current_timestamp()
+    })
+    contas_validas.createOrReplaceTempView(f"vw_contas_staging_{str(uuid.uuid4())[:8]}")
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.contas (
+            id_conta LONG,
+            id_cliente LONG,
+            tipo_conta STRING,
+            status_conta STRING,
+            data_abertura DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        )
+        USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     spark.sql(f"""
         MERGE INTO {SILVER}.contas tgt
         USING vw_contas_staging src
@@ -96,8 +125,26 @@ def processa_cartoes(spark):
     window = Window.partitionBy("id_cartao").orderBy(F.col("data_atualizacao").desc())
     cartoes_unicos = cartoes_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
     cartoes_validos = cartoes_unicos.filter(F.col("_ri") == True).drop("_ri", "row_num")
-    cartoes_validos = cartoes_validos.withColumn("timestamp_processamento", F.current_timestamp())
-    cartoes_validos.createOrReplaceTempView("vw_cartoes_staging")
+    cartoes_validos = cartoes_validos.withColumns({
+        "ano_mes": F.date_format(F.col("data_atualizacao"), "yyyy-MM"),
+        "timestamp_processamento": F.current_timestamp()
+    })
+    cartoes_validos.createOrReplaceTempView(f"vw_cartoes_staging_{str(uuid.uuid4())[:8]}")
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.cartoes (
+            id_cartao LONG,
+            id_conta LONG,
+            bandeira STRING,
+            tipo_cartao STRING,
+            status_cartao STRING,
+            data_emissao DATE,
+            data_atualizacao DATE,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        )
+        USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     spark.sql(f"""
         MERGE INTO {SILVER}.cartoes tgt
         USING vw_cartoes_staging src
@@ -126,7 +173,27 @@ def processa_transacoes(spark):
     window = Window.partitionBy("id_transacao").orderBy(F.col("data_transacao").desc(), F.col("valor").desc())
     transacoes_unicas = transacoes_ri.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1)
     transacoes_validas = transacoes_unicas.filter(F.col("_ri") == True).drop("_ri", "row_num")
-    transacoes_validas.createOrReplaceTempView("vw_transacoes_staging")
+    transacoes_validas = transacoes_validas.withColumns({
+        "ano_mes": F.date_format(F.col("data_transacao"), "yyyy-MM"),
+        "timestamp_processamento": F.current_timestamp()
+    })
+    import uuid
+    transacoes_validas.createOrReplaceTempView(f"vw_transacoes_staging_{str(uuid.uuid4())[:8]}")
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.transacoes_cartao (
+            id_transacao LONG,
+            id_cartao LONG,
+            data_transacao DATE,
+            valor DECIMAL(18,2),
+            nome_estabelecimento STRING,
+            mcc INT,
+            cidade_estabelecimento STRING,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        )
+        USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     spark.sql(f"""
         MERGE INTO {SILVER}.transacoes_cartao tgt
         USING vw_transacoes_staging src
@@ -150,7 +217,24 @@ def processa_estornos(spark):
     transacoes_silver = spark.table(f"{SILVER}.transacoes_cartao").select(F.col("id_transacao"), F.lit(True).alias("_ri"))
     estornos_ri = estornos_tipado.join(transacoes_silver, "id_transacao", "left")
     estornos_validos = estornos_ri.filter(F.col("_ri") == True).drop("_ri")
-    estornos_validos.createOrReplaceTempView("vw_estornos_staging")
+    estornos_validos = estornos_validos.withColumns({
+        "ano_mes": F.date_format(F.col("data_estorno"), "yyyy-MM"),
+        "timestamp_processamento": F.current_timestamp()
+    })
+    import uuid
+    estornos_validos.createOrReplaceTempView(f"vw_estornos_staging_{str(uuid.uuid4())[:8]}")
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {SILVER}.estornos (
+            id_estorno LONG,
+            id_transacao LONG,
+            data_estorno DATE,
+            motivo_estorno STRING,
+            ano_mes STRING,
+            timestamp_processamento TIMESTAMP
+        )
+        USING DELTA
+        PARTITIONED BY (ano_mes)
+    """)
     spark.sql(f"""
         MERGE INTO {SILVER}.estornos tgt
         USING vw_estornos_staging src
