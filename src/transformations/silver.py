@@ -54,7 +54,7 @@ def processa_clientes(spark):
         PARTITIONED BY (ano_mes)
     """)
     print(f"clientes_unicos count: {clientes_unicos.count()}")
-    spark.catalog.clearCache()
+
     # MERGE incremental
     temp_view = f"vw_clientes_staging_{str(uuid.uuid4())[:8]}"
     clientes_unicos.createOrReplaceTempView(temp_view)
@@ -103,7 +103,7 @@ def processa_contas(spark):
         PARTITIONED BY (ano_mes)
     """)
     print(f"contas_validas count: {contas_validas.count()}")
-    spark.catalog.clearCache()
+
     # MERGE incremental
     temp_view = f"vw_contas_staging_{str(uuid.uuid4())[:8]}"
     contas_validas.createOrReplaceTempView(temp_view)
@@ -155,7 +155,7 @@ def processa_cartoes(spark):
         PARTITIONED BY (ano_mes)
     """)
     print(f"cartoes_validos count: {cartoes_validos.count()}")
-    spark.catalog.clearCache()
+
     # MERGE incremental
     temp_view = f"vw_cartoes_staging_{str(uuid.uuid4())[:8]}"
     cartoes_validos.createOrReplaceTempView(temp_view)
@@ -207,7 +207,7 @@ def processa_transacoes(spark):
         PARTITIONED BY (ano_mes)
     """)
     print(f"transacoes_validas count: {transacoes_validas.count()}")
-    spark.catalog.clearCache()
+
     # MERGE incremental
     temp_view = f"vw_transacoes_staging_{str(uuid.uuid4())[:8]}"
     transacoes_validas.createOrReplaceTempView(temp_view)
@@ -251,7 +251,7 @@ def processa_estornos(spark):
         PARTITIONED BY (ano_mes)
     """)
     print(f"estornos_validos count: {estornos_validos.count()}")
-    spark.catalog.clearCache()
+
     # MERGE incremental
     temp_view = f"vw_estornos_staging_{str(uuid.uuid4())[:8]}"
     estornos_validos.createOrReplaceTempView(temp_view)
